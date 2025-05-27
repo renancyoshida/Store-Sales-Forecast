@@ -2,8 +2,10 @@ import pandas as pd
 import numpy as np
 import joblib
 
-from sklearn.model_selection import TimeSeriesSplit, cross_val_score
+from sklearn.model_selection import TimeSeriesSplit, cross_val_score, RandomizedSearchCV
 from sklearn.metrics import make_scorer
+from sklearn.pipeline import make_pipeline
+from sklearn.impute import SimpleImputer
 from xgboost import XGBRegressor
 
 from functions.utils import check_time_split, rmsle
@@ -20,13 +22,24 @@ X,y= data_prep(train)
 
 ts=TimeSeriesSplit(n_splits=3)
 rmsle_score=make_scorer(rmsle, greater_is_better=False)
-xgb_scores=-1*cross_val_score(XGBRegressor(), X, y, cv=ts, scoring=rmsle_score)
+#xgb_scores=-1*cross_val_score(XGBRegressor, X, y, cv=ts, scoring=rmsle_score)
 
-print('XGB scores:', xgb_scores)
 
-model=XGBRegressor()
-model.fit(X,y) # is this correct?
+# hyperparameter tuning
+import scipy.stats as stats
+
+param_dist = {
+    'max_depth': stats.randint(3, 10),
+    'learning_rate': stats.uniform(0.01, 0.1),
+    'subsample': stats.uniform(0.5, 0.5),
+    'n_estimators': stats.randint(50, 200)
+}
+
+grid_search = RandomizedSearchCV(XGBRegressor(), param_dist, cv=ts, scoring=rmsle_score)
+grid_search.fit(X, y) # performs CV over training data
+model=grid_search.best_estimator_
 
 # save model
-joblib.dump(model, f'{model_path}/xgb_basic.pkl')
+model_name='xgb_tuned'
+joblib.dump(model, f'{model_path}\\{model_name}.pkl')
 

@@ -9,27 +9,34 @@ from constants.paths import data_path
 
 def data_prep(data):
     stores=pd.read_csv(f'{data_path}\\stores.csv')
-
+    oil=pd.read_csv(f'{data_path}\\oil.csv')
+    holidays_events=pd.read_csv(f'{data_path}\\holidays_events.csv')
 
     df=pd.merge(data, stores, on='store_nbr', how='left')
+    df=pd.merge(df, oil, on='date', how='left')
+    df=pd.merge(df, holidays_events[['date', 'transferred']], on='date', how='left')
+
+    df['holiday']=1*(df['transferred'] == False) # 1 if not transferred, 0 if transferred
+    df=df.drop(columns=['transferred'])
+    df=df.rename(columns={'dcoilwtico': 'oil_price'})
+
+    # assuming AR model for oil prices
+    df['oil_price']=df['oil_price'].ffill() # fill missing oil prices with mean
+    #df=df.dropna()
 
     # == CLEANING AND PREPROCESSING ==
+    df['date']=pd.to_datetime(df['date'])
 
-    # check for missing values
-    #missing = df.isnull().sum()
-    #missing = missing[missing > 0]
+    df['day_of_week'] = df['date'].dt.dayofweek
 
-    # get month, day of week, year
-    #df['month'] = pd.to_datetime(df['date']).dt.month
-    df['day_of_week'] = pd.to_datetime(df['date']).dt.dayofweek
-    #df['year'] = pd.to_datetime(df['date']).dt.year
+    # add days since paycheck, since earthquake
+    df['day'] = df['date'].dt.day
+    df['days_since_pay']=np.where(df['day']<15, df['day']+1, df['day']-15)
+    df['days_since_quake']=np.maximum((df['date']-pd.to_datetime('2016-04-16')).dt.days,0)
 
-    df.drop(columns=['date'], inplace=True)
 
     # turn time frame vars and cluster to object, get dummies
-
     #len(df['family'].unique()) # too many dummies not a concern, if so use embeddings
-
     for var in ['type', 'cluster','day_of_week']:
         df[var] = df[var].astype('object')
 
@@ -37,18 +44,15 @@ def data_prep(data):
 
     xc=1*pd.get_dummies(df[cat_cols])
 
-    # for j in xc.columns:
-    #     print(j)
-
     # == SPLITS ==
     # do cv with time series split and rmsle error using pipeline
-    
+
     if 'sales' in df.columns:
         y=df['sales']
     else:
         y='None'
 
-    X=pd.concat([df['onpromotion'], xc], axis=1)
+    X=pd.concat([df[['onpromotion', 'holiday', 'oil_price','days_since_pay', 'days_since_quake']], xc], axis=1)
 
     return X, y
 
@@ -59,6 +63,6 @@ if __name__ == '__main__':
     
     # prep data
     X_train, y_train = data_prep(train)
-    X_test = data_prep(test) # what if categorical vars not in train?
+    X_test = data_prep(test) 
 
 
